@@ -1,16 +1,20 @@
-# logfind.py
+# logfind_verbeterd.py
 # Project explanation: http://projectsthehardway.com/
-# A basic implementation of the linux grep command. The program will search for the given strings in files that are listed in a logfind.txt file. 
+# A basic implementation of the linux grep command. The program will search for the given strings in files that are listed in a logfind.txt file. This file must be placed in the home directory! 
 # By default the program will search for all the given strings in a file. If -o option is enabled, the program will return the file if one of the strings is present. 
 # The results will be written to results.txt located in the current working directory.
+# Completed on 30/10/15, revision on 07/11/15 completed
+# Commentary on codereview.stackexchange => http://codereview.stackexchange.com/questions/109815/learn-projects-the-hard-way-logfind-project/109916#109916
 
 import argparse
 import os
 import re
+import unicodedata
 
 def cl_handler():
     """
-    Handles the command line input, with strings as the words to search for in files, and -o as optional argument
+    Handles the command line input, with strings as the words to search    
+    for in files and -o as optional argumen
     """
     
     parser = argparse.ArgumentParser(description="find strings inside files")
@@ -22,73 +26,63 @@ def cl_handler():
 
 def scan_logfind(logfind_dir):
     """
-    Opens the logfind file and scans it for filenames according to a regular expression (filename.extension). 
-    Returns a list with the filenames
+    Opens the logfind file and scans it for filenames 
+    according to a regular expression (filename.extension). 
+    Returns a generator with the filenames
     """
-    files = []
+    
     with open(logfind_dir, "r") as logfind:
         regex = re.compile(r"^[\w,\s-]+\.[A-Za-z]+$")  
         for word in logfind.read().split():            
-            file = regex.match(word)
-            if file:
-                files.append(word)
-    return files
+            if regex.match(word):
+                yield word
     
     
 def scan_directory(file):
-    """
-    Scans the computer for a specified file, starting with the home directory. 
+    """Scans the computer for a specified file, 
+    starting with the home directory. 
     Returns the absolute directory of the file
     """
     home = os.path.expanduser("~")
     for root, dirs, files in os.walk(home):
         for f in files:
             if f == file:        
-               file_directory = os.path.join(root, f)
-               return file_directory
+               return os.path.join(root, f)
 
 
-def search_strings(file_dir, strings, or_option=False):
+def file_contains_strings(file_path, strings, conjunction=all):
     """
-    Searches the file for the specified files. Returns boolean true if all strings are found in the file
-    If the or_option is enabled the function will return boolean true if one string is found in the file.
+    Checks whether the file contains the specified strings.
+    The conjunction should be either the builtin function all()
+    (the default) or any()
     """
-    with open(file_dir, "r") as logfile:
-        logfile = logfile.read().lower()
-        results = []
-        for string in strings:
-            if string in logfile:
-                results.append("True")
-            else:
-                results.append("False")
-                
-    if or_option:
-        for result in results:
-            if result == "True":
+    search = {text.lower(): False for text in strings}
+    with open(file_path, "r") as f:
+        for line in f:
+            line = line.lower()
+            for text, found in search.items():
+                search[text] = found or (text in line)
+            if conjunction(search.values()):
                 return True
-        return False
-    else:
-        for result in results:
-            if result == "False":
-                return False
-        return True
-        
+    return False
+    
+def normalize_caseless(string):
+    """
+    This function normalizes the string and sets it to lower letters
+    """
+    return unicodedata.normalize("NFKD", string.casefold())
+    
         
 def main():
-    """ 
-    main 
-    """
-    results = open("results.txt", "w")
-    strings, or_option = cl_handler()                 
-    logfind = scan_directory("logfind.txt")          
-                                                  
-    logfiles = scan_logfind(logfind)
-    logfiles_dir = []        
-    for logfile in logfiles:
-        logfiles_dir.append(scan_directory(logfile))
-    for logfile_dir in logfiles_dir:
-            if search_strings(logfile_dir, strings, or_option):
-                results.write("{}\n".format(logfile_dir))
+    with open("results.txt", "a") as results:
+        strings, or_option = cl_handler()
+        strings = [normalize_caseless(string) for string in strings]       
+        home = os.path.expanduser("~")
+        logfiles = scan_logfind(r"{}\logfind.txt".format(home))          
+        logfiles_dir = [scan_directory(logfile) for logfile in logfiles]
+        for logfile_dir in logfiles_dir:
+                if file_contains_strings(logfile_dir, strings, any if or_option else all):
+                    results.write("{}\n".format(logfile_dir))
     print("Search complete. Results written to results.txt")
 
 if __name__ == "__main__":
